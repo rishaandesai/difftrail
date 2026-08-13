@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "difftrail"
 version = "0.1.0"
-description = "Forensic reconstruction of lost AI coding project states"
+description = "Forensic reconstruction of lost agentic coding project states"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
