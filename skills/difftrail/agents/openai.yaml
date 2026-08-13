@@ -1,0 +1,4 @@
+interface:
+  display_name: "DiffTrail"
+  short_description: "Reconstruct lost AI coding project states"
+  default_prompt: "Use $difftrail to reconstruct a lost project state from my Codex history."

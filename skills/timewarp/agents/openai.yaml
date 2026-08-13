@@ -1,4 +1,0 @@
-interface:
-  display_name: "Timewarp"
-  short_description: "Reconstruct lost AI coding project states"
-  default_prompt: "Use $timewarp to reconstruct a lost project state from my Codex history."

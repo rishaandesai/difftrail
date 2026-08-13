@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from .evidence import MAX_GIT_BLOB, TimewarpError, canonical_json, read_json, sha256_bytes, sha256_file, write_json
+from .evidence import MAX_GIT_BLOB, DiffTrailError, canonical_json, read_json, sha256_bytes, sha256_file, write_json
 
 AGENT_NAME = "Codex Reconstruction Agent"
-AGENT_EMAIL = "codex@timewarp.local"
-NOTES_REF = "refs/notes/timewarp"
+AGENT_EMAIL = "codex@difftrail.local"
+NOTES_REF = "refs/notes/difftrail"
 
 
 def run(
@@ -39,7 +39,7 @@ def run(
     )
     if check and result.returncode:
         message = result.stderr.strip() or result.stdout.strip() or f"git {' '.join(arguments)} failed"
-        raise TimewarpError(message)
+        raise DiffTrailError(message)
     return result
 
 
@@ -57,14 +57,14 @@ def common_git_dir(root: Path) -> Path:
 
 
 def run_dir(root: Path, run_id: str) -> Path:
-    return common_git_dir(root) / "timewarp" / "runs" / run_id
+    return common_git_dir(root) / "difftrail" / "runs" / run_id
 
 
 def load_run(root: Path, run_id: str) -> tuple[Path, dict[str, Any]]:
     directory = run_dir(root, run_id)
     config_path = directory / "run.json"
     if not config_path.is_file():
-        raise TimewarpError(f"Unknown Timewarp run: {run_id}")
+        raise DiffTrailError(f"Unknown DiffTrail run: {run_id}")
     return directory, read_json(config_path)
 
 
@@ -103,14 +103,14 @@ def start_worktree(root: Path, run_id: str, anchor: str | None = None, worktree:
         existing = Path(config["worktree"])
         if existing.is_dir():
             return {"branch": config["branch"], "worktree": str(existing), "anchor": str(config.get("anchor") or "empty")}
-        raise TimewarpError(f"Recorded worktree is missing: {existing}")
+        raise DiffTrailError(f"Recorded worktree is missing: {existing}")
 
-    branch = f"timewarp/{run_id}"
+    branch = f"difftrail/{run_id}"
     if run(root, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", check=False).returncode == 0:
-        raise TimewarpError(f"Branch already exists: {branch}")
-    destination = (worktree or root.parent / f"{root.name}-timewarp-{run_id}").resolve()
+        raise DiffTrailError(f"Branch already exists: {branch}")
+    destination = (worktree or root.parent / f"{root.name}-difftrail-{run_id}").resolve()
     if destination.exists():
-        raise TimewarpError(f"Worktree path already exists: {destination}")
+        raise DiffTrailError(f"Worktree path already exists: {destination}")
 
     selected_anchor = anchor
     if not selected_anchor:
@@ -119,7 +119,7 @@ def start_worktree(root: Path, run_id: str, anchor: str | None = None, worktree:
     if selected_anchor == "empty":
         result = run(root, "worktree", "add", "--orphan", "-b", branch, str(destination), check=False)
         if result.returncode:
-            raise TimewarpError("This Git version cannot create an orphan worktree; use a repository with an anchor commit")
+            raise DiffTrailError("This Git version cannot create an orphan worktree; use a repository with an anchor commit")
     else:
         verified = run(root, "rev-parse", "--verify", f"{selected_anchor}^{{commit}}").stdout.strip()
         run(root, "worktree", "add", "-b", branch, str(destination), verified)
@@ -137,7 +137,7 @@ def apply_unified_diff(original: bytes, patch: str, *, reverse: bool = False) ->
     try:
         source = original.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise TimewarpError("Cannot apply a text patch to a binary file") from exc
+        raise DiffTrailError("Cannot apply a text patch to a binary file") from exc
     old = source.splitlines(keepends=True)
     lines = patch.splitlines(keepends=True)
     result: list[str] = []
@@ -155,7 +155,7 @@ def apply_unified_diff(original: bytes, patch: str, *, reverse: bool = False) ->
         target_start = new_start if reverse else old_start
         target_index = max(target_start - 1, 0)
         if target_index < source_index:
-            raise TimewarpError("Overlapping or out-of-order patch hunks")
+            raise DiffTrailError("Overlapping or out-of-order patch hunks")
         result.extend(old[source_index:target_index])
         source_index = target_index
         index += 1
@@ -175,12 +175,12 @@ def apply_unified_diff(original: bytes, patch: str, *, reverse: bool = False) ->
                 marker = {"+": "-", "-": "+"}.get(marker, marker)
             if marker == " ":
                 if source_index >= len(old) or old[source_index] != body:
-                    raise TimewarpError("Patch context does not match the reconstructed file")
+                    raise DiffTrailError("Patch context does not match the reconstructed file")
                 result.append(body)
                 source_index += 1
             elif marker == "-":
                 if source_index >= len(old) or old[source_index] != body:
-                    raise TimewarpError("Patch deletion does not match the reconstructed file")
+                    raise DiffTrailError("Patch deletion does not match the reconstructed file")
                 source_index += 1
             elif marker == "+":
                 result.append(body)
@@ -188,7 +188,7 @@ def apply_unified_diff(original: bytes, patch: str, *, reverse: bool = False) ->
                 break
             index += 1
     if not found:
-        raise TimewarpError("Patch contains no unified-diff hunks")
+        raise DiffTrailError("Patch contains no unified-diff hunks")
     result.extend(old[source_index:])
     return "".join(result).encode("utf-8")
 
@@ -198,14 +198,14 @@ def _safe_path(worktree: Path, relative: str) -> Path:
     try:
         candidate.relative_to(worktree.resolve())
     except ValueError as exc:
-        raise TimewarpError(f"Evidence path escapes the worktree: {relative}") from exc
+        raise DiffTrailError(f"Evidence path escapes the worktree: {relative}") from exc
     return candidate
 
 
 def apply_change(worktree: Path, change: dict[str, Any], evidence_id: str) -> dict[str, Any]:
     relative = str(change.get("path") or "")
     if not relative:
-        raise TimewarpError("File change has no path")
+        raise DiffTrailError("File change has no path")
     target = _safe_path(worktree, relative)
     operation = change.get("operation")
     if operation == "delete":
@@ -214,7 +214,7 @@ def apply_change(worktree: Path, change: dict[str, Any], evidence_id: str) -> di
         elif target.exists() or target.is_symlink():
             target.unlink()
         else:
-            raise TimewarpError(f"Cannot delete missing path: {relative}")
+            raise DiffTrailError(f"Cannot delete missing path: {relative}")
         return {"path": relative, "deleted": True, "evidence_id": evidence_id}
 
     move_path = change.get("move_path")
@@ -223,7 +223,7 @@ def apply_change(worktree: Path, change: dict[str, Any], evidence_id: str) -> di
         moved_from = relative
         destination = _safe_path(worktree, str(move_path))
         if not target.exists():
-            raise TimewarpError(f"Cannot move missing path: {relative}")
+            raise DiffTrailError(f"Cannot move missing path: {relative}")
         destination.parent.mkdir(parents=True, exist_ok=True)
         target.rename(destination)
         target = destination
@@ -241,9 +241,9 @@ def apply_change(worktree: Path, change: dict[str, Any], evidence_id: str) -> di
         data = target.read_bytes()
         method = "move"
     else:
-        raise TimewarpError(f"No deterministic bytes for {relative}")
+        raise DiffTrailError(f"No deterministic bytes for {relative}")
     if len(data) > MAX_GIT_BLOB:
-        raise TimewarpError(f"Refusing Git blob over 100 MiB: {relative}")
+        raise DiffTrailError(f"Refusing Git blob over 100 MiB: {relative}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     result = {"path": relative, "sha256": sha256_bytes(data), "evidence_id": evidence_id, "method": method}
@@ -280,11 +280,11 @@ def _git_evidence_matches(worktree: Path, relative: str, evidence: list[Any]) ->
 def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message: str) -> tuple[str, dict[str, Any]]:
     directory, config = load_run(root, run_id)
     if not config.get("worktree"):
-        raise TimewarpError("Run has no reconstruction worktree; run `timewarp start` first")
+        raise DiffTrailError("Run has no reconstruction worktree; run `difftrail start` first")
     worktree = Path(config["worktree"])
     manifest = read_json(manifest_path)
     if not isinstance(manifest, dict):
-        raise TimewarpError("Manifest must be a JSON object")
+        raise DiffTrailError("Manifest must be a JSON object")
     supplied = {entry.get("path"): entry for entry in manifest.get("files", []) if isinstance(entry, dict) and entry.get("path")}
     proof = config.get("proof", {}) if isinstance(config.get("proof"), dict) else {}
 
@@ -294,7 +294,7 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
         if line
     ]
     if not changed:
-        raise TimewarpError("Candidate tree has no changes to commit")
+        raise DiffTrailError("Candidate tree has no changes to commit")
     parent = run(worktree, "rev-parse", "--verify", "HEAD", check=False).stdout.strip() or None
     expanded: list[dict[str, Any]] = []
     indexed_files = set(tracked_files(worktree))
@@ -308,7 +308,7 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
     for relative in current_files:
         path = worktree / relative
         if path.stat().st_size > MAX_GIT_BLOB:
-            raise TimewarpError(f"Refusing Git blob over 100 MiB: {relative}")
+            raise DiffTrailError(f"Refusing Git blob over 100 MiB: {relative}")
         digest = sha256_file(path)
         entry = dict(supplied.get(relative) or {})
         if not entry and parent:
@@ -322,13 +322,13 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
                     "method": "unchanged-anchor-file",
                 }
         if not entry:
-            raise TimewarpError(f"Manifest is missing changed file: {relative}")
+            raise DiffTrailError(f"Manifest is missing changed file: {relative}")
         classification = entry.get("classification")
         if classification not in {"exact", "reconstructed", "inferred"}:
-            raise TimewarpError(f"Invalid classification for {relative}: {classification}")
+            raise DiffTrailError(f"Invalid classification for {relative}: {classification}")
         evidence = entry.get("evidence")
         if not isinstance(evidence, list) or not evidence:
-            raise TimewarpError(f"Manifest needs evidence for {relative}")
+            raise DiffTrailError(f"Manifest needs evidence for {relative}")
         if classification in {"exact", "reconstructed"}:
             candidates = proof.get(relative, [])
             supported = any(
@@ -340,7 +340,7 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
             if not supported:
                 supported = _git_evidence_matches(worktree, relative, evidence)
             if not supported:
-                raise TimewarpError(f"No deterministic proof supports {classification} file {relative}")
+                raise DiffTrailError(f"No deterministic proof supports {classification} file {relative}")
         entry["path"] = relative
         entry["sha256"] = digest
         expanded.append(entry)
@@ -348,20 +348,20 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
     for relative in sorted(path for path in indexed_files if not (worktree / path).exists()):
         entry = dict(supplied.get(relative) or {})
         if not entry:
-            raise TimewarpError(f"Manifest is missing deleted file: {relative}")
+            raise DiffTrailError(f"Manifest is missing deleted file: {relative}")
         classification = entry.get("classification")
         if classification not in {"exact", "reconstructed", "inferred"}:
-            raise TimewarpError(f"Invalid classification for {relative}: {classification}")
+            raise DiffTrailError(f"Invalid classification for {relative}: {classification}")
         evidence = entry.get("evidence")
         if not isinstance(evidence, list) or not evidence:
-            raise TimewarpError(f"Manifest needs evidence for {relative}")
+            raise DiffTrailError(f"Manifest needs evidence for {relative}")
         if classification in {"exact", "reconstructed"}:
             supported = any(
                 isinstance(item, dict) and item.get("deleted") and item.get("evidence_id") in evidence
                 for item in proof.get(relative, [])
             )
             if not supported:
-                raise TimewarpError(f"No deterministic proof supports {classification} deletion {relative}")
+                raise DiffTrailError(f"No deterministic proof supports {classification} deletion {relative}")
         entry.update({"path": relative, "sha256": None, "deleted": True})
         expanded.append(entry)
 
@@ -385,12 +385,12 @@ def commit_reconstruction(root: Path, run_id: str, manifest_path: Path, message:
         [
             message.strip(),
             "",
-            "Timewarp-Reconstructed: true",
-            "Timewarp-Agent: codex",
-            f"Timewarp-Run: {run_id}",
-            f"Timewarp-Target-Time: {target_time}",
-            f"Timewarp-Classification: {overall}",
-            f"Timewarp-Manifest: {manifest_hash}",
+            "DiffTrail-Reconstructed: true",
+            "DiffTrail-Agent: codex",
+            f"DiffTrail-Run: {run_id}",
+            f"DiffTrail-Target-Time: {target_time}",
+            f"DiffTrail-Classification: {overall}",
+            f"DiffTrail-Manifest: {manifest_hash}",
         ]
     )
     run(worktree, "add", "-A")
@@ -410,7 +410,7 @@ def publish(root: Path, run_id: str, remote: str) -> str:
     branch = config.get("branch")
     worktree = Path(config.get("worktree") or root)
     if not branch:
-        raise TimewarpError("Run has no reconstruction branch")
+        raise DiffTrailError("Run has no reconstruction branch")
     local = run(worktree, "rev-parse", f"refs/heads/{branch}").stdout.strip()
     for item in config.get("commits", []):
         if not isinstance(item, dict):
@@ -418,28 +418,28 @@ def publish(root: Path, run_id: str, remote: str) -> str:
         commit = str(item.get("commit") or "")
         manifest_path = Path(str(item.get("manifest") or ""))
         if not commit or not manifest_path.is_file():
-            raise TimewarpError("A reconstruction manifest is missing; refusing to publish")
+            raise DiffTrailError("A reconstruction manifest is missing; refusing to publish")
         manifest_hash = sha256_bytes(canonical_json(read_json(manifest_path)))
         if manifest_hash != item.get("sha256"):
-            raise TimewarpError(f"Manifest hash mismatch for {commit}")
+            raise DiffTrailError(f"Manifest hash mismatch for {commit}")
         if run(worktree, "merge-base", "--is-ancestor", commit, local, check=False).returncode:
-            raise TimewarpError(f"Reconstructed commit is not on {branch}: {commit}")
+            raise DiffTrailError(f"Reconstructed commit is not on {branch}: {commit}")
         note = run(worktree, "notes", f"--ref={NOTES_REF}", "show", commit, check=False)
         try:
             note_hash = sha256_bytes(canonical_json(json.loads(note.stdout))) if note.returncode == 0 else ""
         except ValueError:
             note_hash = ""
         if note_hash != manifest_hash:
-            raise TimewarpError(f"Provenance note mismatch for {commit}")
+            raise DiffTrailError(f"Provenance note mismatch for {commit}")
     if remote not in run(root, "remote").stdout.split():
-        raise TimewarpError(f"Unknown Git remote: {remote}")
+        raise DiffTrailError(f"Unknown Git remote: {remote}")
     existing = run(root, "ls-remote", "--heads", remote, f"refs/heads/{branch}").stdout.strip()
     if existing and existing.split()[0] != local:
         remote_tip = existing.split()[0]
         if run(worktree, "cat-file", "-e", f"{remote_tip}^{{commit}}", check=False).returncode or run(
             worktree, "merge-base", "--is-ancestor", remote_tip, local, check=False
         ).returncode:
-            raise TimewarpError(f"Remote branch already has incompatible history: {branch}")
+            raise DiffTrailError(f"Remote branch already has incompatible history: {branch}")
     refspecs = [f"refs/heads/{branch}:refs/heads/{branch}"]
     if run(root, "show-ref", "--verify", "--quiet", NOTES_REF, check=False).returncode == 0:
         refspecs.append(f"{NOTES_REF}:{NOTES_REF}")

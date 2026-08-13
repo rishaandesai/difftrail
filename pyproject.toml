@@ -3,24 +3,38 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "timewarp"
+name = "difftrail"
 version = "0.1.0"
 description = "Forensic reconstruction of lost AI coding project states"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Rishaan Desai" }]
+keywords = ["ai", "codex", "git", "reconstruction", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
   "pathspec>=0.12,<1",
   "tqdm>=4.66,<5",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rishaandesai/difftrail"
+Repository = "https://github.com/rishaandesai/difftrail"
+Issues = "https://github.com/rishaandesai/difftrail/issues"
+
 [project.scripts]
-timewarp = "timewarp.cli:main"
+difftrail = "difftrail.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.data-files]
-"share/timewarp/skills/timewarp" = ["skills/timewarp/SKILL.md"]
-"share/timewarp/skills/timewarp/agents" = ["skills/timewarp/agents/openai.yaml"]
+"share/difftrail/skills/difftrail" = ["skills/difftrail/SKILL.md"]
+"share/difftrail/skills/difftrail/agents" = ["skills/difftrail/agents/openai.yaml"]

@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from timewarp.codex import normalize_session, session_matches
-from timewarp.evidence import TimewarpError, matches_patterns
-from timewarp.git import apply_change, apply_unified_diff
+from difftrail.codex import normalize_session, session_matches
+from difftrail.evidence import DiffTrailError, matches_patterns
+from difftrail.git import apply_change, apply_unified_diff
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -23,7 +23,7 @@ def shell(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     return result
 
 
-class TimewarpFixture(unittest.TestCase):
+class DiffTrailFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.base = Path(self.temporary.name)
@@ -109,7 +109,7 @@ class TimewarpFixture(unittest.TestCase):
         environment["PYTHONPATH"] = str(PROJECT / "src")
         environment["CODEX_HOME"] = str(self.codex_home)
         result = subprocess.run(
-            [sys.executable, "-m", "timewarp", *args],
+            [sys.executable, "-m", "difftrail", *args],
             cwd=self.repo,
             env=environment,
             text=True,
@@ -160,11 +160,11 @@ class TimewarpFixture(unittest.TestCase):
         )
         commit = committed["commit"]
         author = shell(worktree, "git", "show", "-s", "--format=%an <%ae>", commit).stdout.strip()
-        self.assertEqual(author, "Codex Reconstruction Agent <codex@timewarp.local>")
+        self.assertEqual(author, "Codex Reconstruction Agent <codex@difftrail.local>")
         author_date, committer_date = shell(worktree, "git", "show", "-s", "--format=%aI%n%cI", commit).stdout.splitlines()
         self.assertTrue(author_date.startswith("2026-08-01T10:02:00"))
         self.assertNotEqual(author_date, committer_date)
-        self.assertIn("Timewarp-Reconstructed: true", shell(worktree, "git", "show", "-s", "--format=%B", commit).stdout)
+        self.assertIn("DiffTrail-Reconstructed: true", shell(worktree, "git", "show", "-s", "--format=%B", commit).stdout)
         self.assertEqual(shell(self.repo, "git", "status", "--porcelain").stdout, "")
         self.assertEqual(shell(self.repo, "git", "rev-parse", "HEAD").stdout.strip(), self.base_commit)
 
@@ -189,15 +189,15 @@ class TimewarpFixture(unittest.TestCase):
         shell(self.base, "git", "init", "-q", "--bare", str(bare))
         shell(self.repo, "git", "remote", "add", "origin", str(bare))
         published = self.cli("publish", run_id, "--repo", str(self.repo)).stdout.strip()
-        self.assertEqual(published, f"origin:timewarp/{run_id}")
-        self.assertEqual(shell(bare, "git", "rev-parse", f"refs/heads/timewarp/{run_id}").stdout.strip(), commit)
-        self.assertTrue(shell(bare, "git", "show-ref", "--verify", "refs/notes/timewarp", check=False).returncode == 0)
+        self.assertEqual(published, f"origin:difftrail/{run_id}")
+        self.assertEqual(shell(bare, "git", "rev-parse", f"refs/heads/difftrail/{run_id}").stdout.strip(), commit)
+        self.assertTrue(shell(bare, "git", "show-ref", "--verify", "refs/notes/difftrail", check=False).returncode == 0)
 
     def test_init_is_human_readable_and_remote_is_optional(self) -> None:
         result = self.cli("init", str(self.repo), "--no-remote-check")
-        self.assertIn("Timewarp setup", result.stdout)
+        self.assertIn("DiffTrail setup", result.stdout)
         self.assertIn("Ready to reconstruct.", result.stdout)
-        self.assertIn("only needed for `timewarp publish`", result.stdout)
+        self.assertIn("only needed for `difftrail publish`", result.stdout)
         self.assertNotIn('"python": {', result.stdout)
 
     def test_init_json_is_machine_readable(self) -> None:
@@ -214,7 +214,7 @@ class TimewarpFixture(unittest.TestCase):
         first = self.cli("reconstruct", "--repo", str(self.repo), "--quiet", "--print-prompt")
         self.assertIn("complete-history reconstruction", first.stdout)
         self.assertIn("the entire recoverable project history", first.stdout)
-        run_count = len(list((self.repo / ".git" / "timewarp" / "runs").glob("*/run.json")))
+        run_count = len(list((self.repo / ".git" / "difftrail" / "runs").glob("*/run.json")))
 
         second = self.cli(
             "reconstruct",
@@ -227,7 +227,7 @@ class TimewarpFixture(unittest.TestCase):
         )
         self.assertIn("single-state reconstruction", second.stdout)
         self.assertIn("before the refactor", second.stdout)
-        self.assertEqual(len(list((self.repo / ".git" / "timewarp" / "runs").glob("*/run.json"))), run_count)
+        self.assertEqual(len(list((self.repo / ".git" / "difftrail" / "runs").glob("*/run.json"))), run_count)
 
     def test_reconstruct_invokes_codex_exec_with_existing_auth_path(self) -> None:
         scan = json.loads(self.cli("scan", str(self.repo), "--quiet").stdout)
@@ -396,10 +396,10 @@ class TimewarpFixture(unittest.TestCase):
         events = [json.loads(line) for line in (Path(output["run_dir"]) / "events.jsonl").read_text().splitlines()]
         self.assertTrue(any(event.get("kind") == "evidence_file" and event.get("sha256") for event in events))
 
-    def test_timewarpignore_excludes_a_tracked_file(self) -> None:
+    def test_difftrailignore_excludes_a_tracked_file(self) -> None:
         (self.repo / "secret.txt").write_text("tracked but excluded\n")
-        (self.repo / ".timewarpignore").write_text("secret.txt\n")
-        shell(self.repo, "git", "add", "secret.txt", ".timewarpignore")
+        (self.repo / ".difftrailignore").write_text("secret.txt\n")
+        shell(self.repo, "git", "add", "secret.txt", ".difftrailignore")
         shell(self.repo, "git", "commit", "-q", "-m", "add ignored evidence")
         output = json.loads(self.cli("scan", str(self.repo)).stdout)
         events = [json.loads(line) for line in (Path(output["run_dir"]) / "events.jsonl").read_text().splitlines()]
@@ -458,7 +458,7 @@ class TimewarpFixture(unittest.TestCase):
         committed = json.loads(
             self.cli("commit", run_id, "--repo", str(self.repo), "--manifest", str(manifest), "--message", "recover deletion").stdout
         )
-        note = json.loads(shell(Path(start["worktree"]), "git", "notes", "--ref=refs/notes/timewarp", "show", committed["commit"]).stdout)
+        note = json.loads(shell(Path(start["worktree"]), "git", "notes", "--ref=refs/notes/difftrail", "show", committed["commit"]).stdout)
         deleted = next(item for item in note["files"] if item["path"] == "app.py")
         self.assertTrue(deleted["deleted"])
         self.assertIsNone(deleted["sha256"])
@@ -529,7 +529,7 @@ class PatchTests(unittest.TestCase):
         self.assertEqual(apply_unified_diff(updated, patch, reverse=True), b"one\ntwo\n")
 
     def test_mismatched_patch_fails(self) -> None:
-        with self.assertRaises(TimewarpError):
+        with self.assertRaises(DiffTrailError):
             apply_unified_diff(b"different\n", "@@ -1 +1 @@\n-old\n+new\n")
 
     def test_move_and_delete(self) -> None:

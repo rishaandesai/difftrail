@@ -13,7 +13,7 @@ MAX_GIT_BLOB = 100 * 1024 * 1024
 MAX_INLINE_TEXT = 1024 * 1024
 
 
-class TimewarpError(RuntimeError):
+class DiffTrailError(RuntimeError):
     pass
 
 
@@ -44,7 +44,7 @@ def read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise TimewarpError(f"Cannot read JSON from {path}: {exc}") from exc
+        raise DiffTrailError(f"Cannot read JSON from {path}: {exc}") from exc
 
 
 def write_jsonl(path: Path, values: Iterable[dict[str, Any]]) -> None:
@@ -66,11 +66,11 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
                 try:
                     value = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    raise TimewarpError(f"Malformed JSONL at {path}:{line_number}: {exc}") from exc
+                    raise DiffTrailError(f"Malformed JSONL at {path}:{line_number}: {exc}") from exc
                 if isinstance(value, dict):
                     values.append(value)
     except OSError as exc:
-        raise TimewarpError(f"Cannot read {path}: {exc}") from exc
+        raise DiffTrailError(f"Cannot read {path}: {exc}") from exc
     return values
 
 
@@ -94,7 +94,7 @@ def repository_path(path: str | Path, root: Path) -> str | None:
 
 def load_ignore_patterns(root: Path, explicit: Iterable[str]) -> list[str]:
     patterns = [pattern for pattern in explicit if pattern]
-    ignore_file = root / ".timewarpignore"
+    ignore_file = root / ".difftrailignore"
     if ignore_file.is_file():
         for raw in ignore_file.read_text(errors="replace").splitlines():
             line = raw.strip()
