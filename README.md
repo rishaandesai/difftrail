@@ -22,7 +22,7 @@
 
 Git only remembers what you commit. AI coding agents often leave useful intermediate states scattered across patches, tool calls, test output, uncommitted diffs, later file versions, and local session history.
 
-DiffTrail collects that evidence, replays every change it can verify, and uses Codex to reconstruct the missing pieces. The result is a separate `difftrail/*` branch with clearly marked commits and file-level provenance.
+DiffTrail retrospectively collects that evidence, replays every change it can verify, and uses Codex to reconstruct the missing pieces in a separate branch with clearly marked commits that you can revert or refer to.
 
 ## Quick start
 
