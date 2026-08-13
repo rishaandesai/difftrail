@@ -232,7 +232,17 @@ class TimewarpFixture(unittest.TestCase):
     def test_reconstruct_invokes_codex_exec_with_existing_auth_path(self) -> None:
         scan = json.loads(self.cli("scan", str(self.repo), "--quiet").stdout)
         fake_codex = self.base / "fake-codex"
-        fake_codex.write_text("#!/bin/sh\nprintf 'args:%s\\n' \"$*\"\ncat\n")
+        args_file = self.base / "fake-codex-args"
+        fake_codex.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s' \"$*\" > '{args_file}'\n"
+            "cat >/dev/null\n"
+            "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"test-thread\"}'\n"
+            "printf '%s\\n' '{\"type\":\"item.started\",\"item\":{\"type\":\"command_execution\",\"command\":\"git log --oneline\"}}'\n"
+            "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"git log --oneline\",\"aggregated_output\":\"RAW GIT OUTPUT\"}}'\n"
+            "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Reconstruction finished cleanly.\"}}'\n"
+            "printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
+        )
         fake_codex.chmod(0o755)
         result = self.cli(
             "reconstruct",
@@ -243,10 +253,61 @@ class TimewarpFixture(unittest.TestCase):
             "--codex",
             str(fake_codex),
         )
-        self.assertIn("args:exec --cd", result.stdout)
-        self.assertIn("--sandbox workspace-write", result.stdout)
-        self.assertIn("--add-dir", result.stdout)
-        self.assertIn("complete-history reconstruction", result.stdout)
+        arguments = args_file.read_text()
+        self.assertIn("exec --cd", arguments)
+        self.assertIn("--sandbox workspace-write", arguments)
+        self.assertIn("--add-dir", arguments)
+        self.assertIn("--json", arguments)
+        self.assertIn("Reconstruction finished cleanly.", result.stdout)
+        self.assertNotIn("RAW GIT OUTPUT", result.stdout)
+        self.assertIn("[codex] $ git log --oneline", result.stderr)
+        run_dir = Path(scan["run_dir"])
+        self.assertIn("RAW GIT OUTPUT", (run_dir / "codex.jsonl").read_text())
+
+    def test_progress_ledger_grows_and_can_move_completion_backward(self) -> None:
+        scan = json.loads(self.cli("scan", str(self.repo), "--quiet").stdout)
+        run_id = scan["run_id"]
+        self.cli(
+            "progress", run_id, "--repo", str(self.repo),
+            "--add", "planning", "Plan reconstruction",
+            "--add", "inspect", "Inspect evidence",
+            "--complete", "planning",
+        )
+        path = Path(scan["run_dir"]) / "progress.json"
+        first = json.loads(path.read_text())
+        self.assertEqual(sum(task["completed"] for task in first["tasks"].values()), 1)
+        self.assertEqual(len(first["tasks"]), 2)
+
+        self.cli(
+            "progress", run_id, "--repo", str(self.repo),
+            "--add", "gap", "Resolve newly discovered gap",
+        )
+        grown = json.loads(path.read_text())
+        self.assertEqual(sum(task["completed"] for task in grown["tasks"].values()), 1)
+        self.assertEqual(len(grown["tasks"]), 3)
+        self.cli("progress", run_id, "--repo", str(self.repo), "--complete", "inspect")
+        self.cli("progress", run_id, "--repo", str(self.repo), "--reopen", "planning")
+        reopened = json.loads(path.read_text())
+        self.assertFalse(reopened["tasks"]["planning"]["completed"])
+
+    def test_reconstruct_resume_reuses_run_ledger_and_target(self) -> None:
+        scan = json.loads(self.cli("scan", str(self.repo), "--quiet").stdout)
+        run_id = scan["run_id"]
+        first = self.cli(
+            "reconstruct", "before the refactor", "--repo", str(self.repo),
+            "--run", run_id, "--print-prompt",
+        )
+        self.assertIn("new reconstruction", first.stdout)
+        progress_path = Path(scan["run_dir"]) / "progress.json"
+        self.cli(
+            "progress", run_id, "--repo", str(self.repo),
+            "--add", "inspect", "Inspect evidence", "--complete", "planning",
+        )
+        before = progress_path.read_text()
+        resumed = self.cli("reconstruct", "--repo", str(self.repo), "--resume", "--print-prompt")
+        self.assertIn("resumed reconstruction", resumed.stdout)
+        self.assertIn("before the refactor", resumed.stdout)
+        self.assertEqual(progress_path.read_text(), before)
 
     def test_false_exact_claim_is_rejected(self) -> None:
         run_id = json.loads(self.cli("scan", str(self.repo)).stdout)["run_id"]

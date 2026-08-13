@@ -19,6 +19,11 @@ The high-level workflow is `timewarp reconstruct`: with no target it asks the in
 timewarp reconstruct
 timewarp reconstruct "before the auth refactor"
 timewarp reconstruct --run latest
+timewarp reconstruct --resume
 ```
+
+During reconstruction, Timewarp renders a persistent `tqdm` task bar and prints each invoked shell command as `[codex] $ ...`. Codex maintains a durable task ledger at `.git/timewarp/runs/<run-id>/progress.json`: its total grows when new milestones or gaps are discovered, completed tasks advance the bar, and reopened work can move it backward. Raw Codex events and command outputs are appended to `codex.jsonl` instead of flooding the terminal.
+
+`timewarp reconstruct --resume` reuses the latest run without rescanning, preserves its ledger and reconstruction worktree, restores the prior target when one was supplied, and asks Codex to continue from the existing commits, manifests, and pending tasks. Use `--run RUN_ID --resume` to resume a specific older run.
 
 Timewarp is local-first. It stores no model credentials and embeds no provider SDK; `reconstruct` delegates reasoning and tool use to the installed Codex CLI with the user's existing authentication. It does not modify the source worktree, push automatically, or execute historical shell commands merely because they appear in evidence.
