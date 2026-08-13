@@ -905,7 +905,7 @@ def command_publish(args: argparse.Namespace) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="difftrail", description="Reconstruct lost AI coding project states")
+    result = argparse.ArgumentParser(prog="difftrail", description="Reconstruct lost agentic coding project states")
     result.add_argument("--version", action="version", version=__version__)
     sub = result.add_subparsers(dest="subcommand", required=True)
 
