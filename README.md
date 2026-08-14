@@ -57,12 +57,6 @@ difftrail reconstruct
 
 Upgrade later with `uv tool upgrade difftrail`. DiffTrail requires Python 3.11+, Git, the [Codex CLI](https://developers.openai.com/codex/cli/), and existing Codex authentication.
 
-Until the first PyPI release is published, run the GitHub version directly:
-
-```bash
-uvx --from git+https://github.com/rishaandesai/difftrail.git difftrail init
-```
-
 ## How it works
 
 | | |
