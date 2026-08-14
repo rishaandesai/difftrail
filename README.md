@@ -2,7 +2,7 @@
 
 # DiffTrail
 
-### Reconstruct project history that Git never captured.
+### Reconstruct Git history—even if you never committed it.
 
 **Recover lost states and turn them into an evidence-backed Git timeline.**
 
@@ -20,9 +20,9 @@
 
 ---
 
-Git only remembers what you commit. AI coding agents often leave useful intermediate states scattered across patches, tool calls, test output, uncommitted diffs, later file versions, and local session history.
+Git only remembers what you commit. Useful intermediate states often survive elsewhere, such as in patches, tool calls, test outputs, uncommitted diffs, later file versions, local session history, etc.
 
-DiffTrail retrospectively collects that evidence, replays every change it can verify, and uses Codex to reconstruct the missing pieces in a separate branch with clearly marked commits that you can revert or refer to.
+DiffTrail retrospectively collects that evidence, replays every change it can verify, and uses a coding agent model to reconstruct the missing pieces in a separate branch with clearly marked commits that you can revert or refer to.
 
 ## Quick start
 
@@ -55,13 +55,13 @@ difftrail init
 difftrail reconstruct
 ```
 
-Upgrade later with `uv tool upgrade difftrail`. DiffTrail requires Python 3.11+, Git, the [Codex CLI](https://developers.openai.com/codex/cli/), and existing Codex authentication.
+Upgrade later with `uv tool upgrade difftrail`. DiffTrail requires Python 3.11+, Git, and the [Codex CLI](https://developers.openai.com/codex/cli/). 
 
 ## How it works
 
 | | |
 | --- | --- |
-| **Collect** | Finds matching Codex sessions, Git history, diffs, patches, file versions, tool calls, test output, and supplied artifacts. |
+| **Collect** | Finds Git history, uncommitted diffs, patches, file versions, tool calls, test output, supplied artifacts, and matching Codex sessions. |
 | **Reconstruct** | Replays byte-exact changes first, then lets Codex resolve only the remaining gaps. |
 | **Preserve** | Writes reconstructed milestones to a separate branch and worktree with provenance attached as Git notes. |
 
@@ -83,7 +83,7 @@ The lower-level `start`, `replay`, `commit`, and `verify` commands support the r
 
 ## Safety
 
-DiffTrail is local-first. It never switches or modifies the original worktree, never publishes automatically, stores no model credentials, and never executes a historical command merely because it appeared in agent history.
+DiffTrail doesn't switch or modify the original worktree or branch, stores no model credentials, and never arbitrarily executes a historical command merely because it appeared in agent history.
 
 Every reconstructed file is classified as:
 
@@ -91,7 +91,7 @@ Every reconstructed file is classified as:
 - `reconstructed` — the bytes follow from verified evidence;
 - `inferred` — model judgment affected the result.
 
-Full manifests remain under `.git/difftrail/` and travel with published commits through `refs/notes/difftrail`.
+Full manifests are located under `.git/difftrail/` and published commits through `refs/notes/difftrail`.
 
 ## License
 
